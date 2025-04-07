@@ -10,6 +10,11 @@ from docx import Document
 import requests
 from datetime import datetime
 
+# FAISS + embedding model
+import faiss
+import pickle
+from sentence_transformers import SentenceTransformer
+
 app = Flask(__name__)
 CORS(app)
 
@@ -32,7 +37,7 @@ def handle_query():
 
     discipline = data.get("discipline", "").lower().replace(" ", "_")
     search_type = data.get("search_type", "")
-    timeline = data.get("timeline", "")
+    timeline = data.get("timeline", "") or "Not specified"
     source_context = str(data.get("source_context", ""))
     supervisor_email = data.get("supervisor_email")
     supervisor_name = data.get("supervisor_name")
@@ -51,11 +56,35 @@ def handle_query():
         role_type = "staff"
     else:
         role_type = "general"
+    # Load FAISS index and docs
+    try:
+        index = faiss.read_index(f"indexes/{discipline}_index.faiss")
+        with open(f"indexes/{discipline}_docs.pkl", "rb") as f:
+            docs = pickle.load(f)
+    except Exception as e:
+        print("❌ FAISS load error:", str(e))
+        return jsonify({"status": "error", "message": f"FAISS load error: {str(e)}"}), 500
 
+    # Embed the query and search
+    embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+    query_vector = embed_model.encode([query])
+    D, I = index.search(query_vector, k=10)
+
+    # Collect top chunks
+    context_chunks = [
+        docs[i]['text'] for i in I[0]
+        if i < len(docs) and len(docs[i]['text'].strip()) > 100
+    ][:3]
+
+    context_text = "\n\n".join(context_chunks)
+   
     prompt = f"""
 {source_context}
 
-You are a strategic advisor responding to an executive-level UK business issue.
+📚 Context from strategic materials:
+{context_text}
+
+You are a strategic advisor or director responding to an executive-level UK business issue.
 
 Context:
 - Discipline: {discipline.title()}
