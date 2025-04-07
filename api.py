@@ -125,7 +125,7 @@ Query:
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=12)
-        pdf.multi_cell(0, 10, full_text)
+        pdf.multi_cell(0, 10, full_text.encode("latin-1", "replace").decode("latin-1"))
         pdf.output(pdf_file)
 
         doc = Document()
