@@ -77,9 +77,19 @@ def handle_query():
         if i < len(docs) and len(docs[i]['text'].strip()) > 100
     ][:5]
 
-    context_text = "\n\n".join(context_chunks)
    
+    # Collect top chunks
+    context_chunks = [
+        docs[i]['text'] for i in I[0]
+        if i < len(docs) and len(docs[i]['text'].strip()) > 100
+    ][:5]
+
+    context_text = "\n\n".join(context_chunks)
+    if not timeline:
+        timeline = "Not specified"
+    
     prompt = f"""
+
 {source_context}
 
 📚 Context from strategic materials:
