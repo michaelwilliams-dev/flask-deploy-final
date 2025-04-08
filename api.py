@@ -4,6 +4,8 @@ from openai import OpenAI
 import os
 import json
 import base64
+import zipfile
+from fpdf import FPDF
 from docx import Document
 import requests
 from datetime import datetime
@@ -13,16 +15,16 @@ import faiss
 import pickle
 from sentence_transformers import SentenceTransformer
 
-# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
-# Initialize OpenAI client with API key from environment variable
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 @app.route("/query", methods=["POST"])
 def handle_query():
     data = request.get_json()
+
+    print("🚀 AIVS BUILD: 2024-04-07 19:00 - full rebuild")
 
     name = data.get("full_name")
     email = data.get("email")
@@ -54,7 +56,7 @@ def handle_query():
         role_type = "staff"
     else:
         role_type = "general"
-
+    # Load FAISS index and docs
     try:
         index = faiss.read_index(f"indexes/{discipline}_index.faiss")
         with open(f"indexes/{discipline}_docs.pkl", "rb") as f:
@@ -63,63 +65,69 @@ def handle_query():
         print("❌ FAISS load error:", str(e))
         return jsonify({"status": "error", "message": f"FAISS load error: {str(e)}"}), 500
 
+    # Embed the query and search
     embed_model = SentenceTransformer("all-MiniLM-L6-v2")
     query_vector = embed_model.encode([query])
     D, I = index.search(query_vector, k=10)
 
+    # Collect top chunks
     context_chunks = [
         docs[i]['text'] for i in I[0]
         if i < len(docs) and len(docs[i]['text'].strip()) > 100
     ][:5]
 
     context_text = "\n\n".join(context_chunks)
-
+   
     prompt = f"""
-📚 Strategic Context:
+{source_context}
+
+📚 Context from strategic materials:
 {context_text}
 
-You are a senior UK-based business strategist. The user is facing a real challenge in leadership, market competition, pricing, or operational response. You are to enhance your answer using both current commercial logic and timeless strategic wisdom (such as Sun Tzu, Machiavelli, or Robert Greene), drawn from the context provided.
+You are a strategic advisor or director responding to an executive-level UK business issue.
 
-DO NOT only reply with philosophy — this is a live business decision. Use that wisdom to support a clear business recommendation. Provide practical steps, UK-relevant insights, and if useful, quote or reference the strategic material to reinforce your advice.
-
-Use British English. Base your answer on what a UK executive would expect from a smart, experienced, and commercially realistic advisor.
+Context:
+- Discipline: {discipline.title()}
+- Search Type: {search_type}
+- Timeline: {timeline}
 
 Please return your answer in this exact JSON format:
-{
-  "enquirer_reply": "A commercially sound summary with optional strategic insight woven in — NOT generic fluff.",
+{{
+  "enquirer_reply": "A thoughtful, actionable paragraph that addresses the problem..",
   "action_sheet": [
-    "Step 1: Clearly stated commercial action...",
-    "Step 2:...",
-    "Step 3:..."
+    "Step 1: ...",
+    "Step 2: ...",
+    "Step 3: ..."
   ]
-}
+}}
+
+Query:
+{query}
 """
 
-print("Prompt being sent to GPT:\n", prompt)
+    print("📤 Prompt being sent to GPT:\n", prompt)
 
-try:
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    content = response.choices[0].message.content
-    parsed = json.loads(content)
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        content = response.choices[0].message.content
+        parsed = json.loads(content)
 
-    if isinstance(parsed.get("action_sheet"), dict):
-        parsed["action_sheet"] = list(parsed["action_sheet"].values())
+        if isinstance(parsed.get("action_sheet"), dict):
+            parsed["action_sheet"] = list(parsed["action_sheet"].values())
 
-except Exception as e:
-    print("❌ GPT Error:", str(e))
-    return jsonify({"status": "error", "message": f"OpenAI error: {str(e)}"}), 500
+    except Exception as e:
+        print("❌ GPT Error:", str(e))
+        return jsonify({"status": "error", "message": f"OpenAI error: {str(e)}"}), 500
 
-enquirer_text = parsed.get("enquirer_reply", "No enquirer reply provided.")
-action_text = parsed.get("action_sheet", [])
-action_text_formatted = "\n".join(f"{i+1}. {item}" for i, item in enumerate(action_text))
+    enquirer_text = parsed.get("enquirer_reply", "No enquirer reply provided.")
+    action_text = parsed.get("action_sheet", [])
+    action_text_formatted = "\n".join(f"{i+1}. {item}" for i, item in enumerate(action_text))
 
-def write_outputs(recipient_label, include_action, timestamp):
-    print(f"📅 DEBUG: Timeline = '{timeline}'")
-
-    full_text = f"""AIVS REPORT – {recipient_label.upper()} – {timestamp}
+    def write_outputs(recipient_label, include_action, timestamp):
+        full_text = f"""AIVS REPORT – {recipient_label.upper()} – {timestamp}
 
 ==================================================
 
@@ -127,7 +135,7 @@ def write_outputs(recipient_label, include_action, timestamp):
 {query}
 
 📘 Discipline: {discipline.title()}
-📅 TIMELINE – Action Needed By: {timeline or 'Not specified'}
+📅 Timeline: {timeline}
 🧭 Search Type: {search_type}
 
 ==================================================
@@ -136,65 +144,79 @@ def write_outputs(recipient_label, include_action, timestamp):
 {enquirer_text}
 """
 
-    if include_action:
-        full_text += "\n\n✅ ACTION SHEET:\n" + "\n".join(f"  - {item}" for item in action_text)
+        if include_action:
+            full_text += "\n\n✅ ACTION SHEET:\n" + "\n".join(f"  - {item}" for item in action_text)
 
-    docx_file = f"{recipient_label}_{timestamp}.docx"
-    doc = Document()
-    doc.add_paragraph(full_text)
-    doc.save(docx_file)
+        pdf_file = f"{recipient_label}_{timestamp}.pdf"
+        docx_file = f"{recipient_label}_{timestamp}.docx"
+        zip_file = f"{recipient_label}_{timestamp}.zip"
 
-    return docx_file
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.multi_cell(0, 10, full_text.encode("latin-1", "replace").decode("latin-1"))
+        pdf.output(pdf_file)
 
-timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        doc = Document()
+        doc.add_paragraph(full_text)
+        doc.save(docx_file)
 
-files_to_send = {
-    email: write_outputs("user", include_action=False, timestamp=timestamp)
-}
+        with zipfile.ZipFile(zip_file, 'w') as zipf:
+            zipf.write(pdf_file)
+            zipf.write(docx_file)
 
-if supervisor_email:
-    files_to_send[supervisor_email] = write_outputs("supervisor", include_action=True, timestamp=timestamp)
+        return zip_file
 
-if hr_email:
-    files_to_send[hr_email] = write_outputs("hr", include_action=True, timestamp=timestamp)
+    # Generate timestamp once
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 
-try:
-    for recipient, docx_path in files_to_send.items():
-        with open(docx_path, "rb") as f:
-            docx_encoded = base64.b64encode(f.read()).decode()
+    files_to_send = {
+        email: write_outputs("user", include_action=False, timestamp=timestamp)
+    }
 
-        postmark_payload = {
-            "From": os.getenv("POSTMARK_FROM_EMAIL"),
-            "To": recipient,
-            "Subject": "Your AI Response",
-            "TextBody": "Please find your AI-generated response attached.",
-            "Attachments": [
-                {
-                    "Name": os.path.basename(docx_path),
-                    "Content": docx_encoded,
-                    "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                }
-            ]
-        }
+    if supervisor_email:
+        files_to_send[supervisor_email] = write_outputs("supervisor", include_action=True, timestamp=timestamp)
 
-        r = requests.post(
-            "https://api.postmarkapp.com/email",
-            headers={
-                "X-Postmark-Server-Token": os.getenv("POSTMARK_API_KEY"),
-                "Content-Type": "application/json"
-            },
-            json=postmark_payload
-        )
-        if r.status_code != 200:
-            raise Exception(f"Postmark error: {r.status_code} - {r.text}")
+    if hr_email:
+        files_to_send[hr_email] = write_outputs("hr", include_action=True, timestamp=timestamp)
 
-except Exception as e:
-    print("❌ Postmark Error:", str(e))
-    return jsonify({"status": "error", "message": f"Postmark error: {str(e)}"}), 500
+    try:
+        for recipient, zip_path in files_to_send.items():
+            with open(zip_path, "rb") as f:
+                zip_encoded = base64.b64encode(f.read()).decode()
 
-print("✅ All responses sent")
-return jsonify({"status": "success", "message": "Response emailed to all recipients successfully."})
+            postmark_payload = {
+                "From": os.getenv("POSTMARK_FROM_EMAIL"),
+                "To": recipient,
+                "Subject": "Your AI Response",
+                "TextBody": "Please find your AI-generated response attached.",
+                "Attachments": [
+                    {
+                        "Name": os.path.basename(zip_path),
+                        "Content": zip_encoded,
+                        "ContentType": "application/zip"
+                    }
+                ]
+            }
 
+            r = requests.post(
+                "https://api.postmarkapp.com/email",
+                headers={
+                    "X-Postmark-Server-Token": os.getenv("POSTMARK_API_KEY"),
+                    "Content-Type": "application/json"
+                },
+                json=postmark_payload
+            )
+
+            if r.status_code != 200:
+                raise Exception(f"Postmark error: {r.status_code} - {r.text}")
+
+    except Exception as e:
+        print("❌ Postmark Error:", str(e))
+        return jsonify({"status": "error", "message": f"Postmark error: {str(e)}"}), 500
+
+    print("✅ All responses sent")
+    return jsonify({"status": "success", "message": "Response emailed to all recipients successfully."})
 
 @app.route("/ping")
 def ping():
