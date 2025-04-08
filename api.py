@@ -85,19 +85,17 @@ DO NOT only reply with philosophy — this is a live business decision. Use that
 Use British English. Base your answer on what a UK executive would expect from a smart, experienced, and commercially realistic advisor.
 
 Please return your answer in this exact JSON format:
-{{
+{
   "enquirer_reply": "A commercially sound summary with optional strategic insight woven in — NOT generic fluff.",
   "action_sheet": [
     "Step 1: Clearly stated commercial action...",
     "Step 2:...",
     "Step 3:..."
   ]
-}}
+}
 """
 
-    print("Prompt being sent to GPT:
-", prompt)
-
+print("Prompt being sent to GPT:\n", prompt)
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
