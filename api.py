@@ -172,9 +172,9 @@ Query:
         files_to_send[hr_email] = write_outputs("hr", include_action=True, timestamp=timestamp)
 
     try:
-        for recipient, zip_path in files_to_send.items():
-            with open(zip_path, "rb") as f:
-                docx_encoded = base64.b64encode(f.read()).decode(
+        for recipient, docx_path in files_to_send.items():
+            with open(docx_path, "rb") as f:
+                docx_encoded = base64.b64encode(f.read()).decode()
 
             postmark_payload = {
                 "From": os.getenv("POSTMARK_FROM_EMAIL"),
