@@ -96,29 +96,30 @@ Please return your answer in this exact JSON format:
 """
 
 print("Prompt being sent to GPT:\n", prompt)
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        content = response.choices[0].message.content
-        parsed = json.loads(content)
 
-        if isinstance(parsed.get("action_sheet"), dict):
-            parsed["action_sheet"] = list(parsed["action_sheet"].values())
+try:
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    content = response.choices[0].message.content
+    parsed = json.loads(content)
 
-    except Exception as e:
-        print("❌ GPT Error:", str(e))
-        return jsonify({"status": "error", "message": f"OpenAI error: {str(e)}"}), 500
+    if isinstance(parsed.get("action_sheet"), dict):
+        parsed["action_sheet"] = list(parsed["action_sheet"].values())
 
-    enquirer_text = parsed.get("enquirer_reply", "No enquirer reply provided.")
-    action_text = parsed.get("action_sheet", [])
-    action_text_formatted = "\n".join(f"{i+1}. {item}" for i, item in enumerate(action_text))
+except Exception as e:
+    print("❌ GPT Error:", str(e))
+    return jsonify({"status": "error", "message": f"OpenAI error: {str(e)}"}), 500
 
-    def write_outputs(recipient_label, include_action, timestamp):
-        print(f"📅 DEBUG: Timeline = '{timeline}'")
+enquirer_text = parsed.get("enquirer_reply", "No enquirer reply provided.")
+action_text = parsed.get("action_sheet", [])
+action_text_formatted = "\n".join(f"{i+1}. {item}" for i, item in enumerate(action_text))
 
-        full_text = f"""AIVS REPORT – {recipient_label.upper()} – {timestamp}
+def write_outputs(recipient_label, include_action, timestamp):
+    print(f"📅 DEBUG: Timeline = '{timeline}'")
+
+    full_text = f"""AIVS REPORT – {recipient_label.upper()} – {timestamp}
 
 ==================================================
 
@@ -135,65 +136,65 @@ print("Prompt being sent to GPT:\n", prompt)
 {enquirer_text}
 """
 
-        if include_action:
-            full_text += "\n\n✅ ACTION SHEET:\n" + "\n".join(f"  - {item}" for item in action_text)
+    if include_action:
+        full_text += "\n\n✅ ACTION SHEET:\n" + "\n".join(f"  - {item}" for item in action_text)
 
-        docx_file = f"{recipient_label}_{timestamp}.docx"
-        doc = Document()
-        doc.add_paragraph(full_text)
-        doc.save(docx_file)
+    docx_file = f"{recipient_label}_{timestamp}.docx"
+    doc = Document()
+    doc.add_paragraph(full_text)
+    doc.save(docx_file)
 
-        return docx_file
+    return docx_file
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 
-    files_to_send = {
-        email: write_outputs("user", include_action=False, timestamp=timestamp)
-    }
+files_to_send = {
+    email: write_outputs("user", include_action=False, timestamp=timestamp)
+}
 
-    if supervisor_email:
-        files_to_send[supervisor_email] = write_outputs("supervisor", include_action=True, timestamp=timestamp)
+if supervisor_email:
+    files_to_send[supervisor_email] = write_outputs("supervisor", include_action=True, timestamp=timestamp)
 
-    if hr_email:
-        files_to_send[hr_email] = write_outputs("hr", include_action=True, timestamp=timestamp)
+if hr_email:
+    files_to_send[hr_email] = write_outputs("hr", include_action=True, timestamp=timestamp)
 
-    try:
-        for recipient, docx_path in files_to_send.items():
-            with open(docx_path, "rb") as f:
-                docx_encoded = base64.b64encode(f.read()).decode()
+try:
+    for recipient, docx_path in files_to_send.items():
+        with open(docx_path, "rb") as f:
+            docx_encoded = base64.b64encode(f.read()).decode()
 
-            postmark_payload = {
-                "From": os.getenv("POSTMARK_FROM_EMAIL"),
-                "To": recipient,
-                "Subject": "Your AI Response",
-                "TextBody": "Please find your AI-generated response attached.",
-                "Attachments": [
-                    {
-                        "Name": os.path.basename(docx_path),
-                        "Content": docx_encoded,
-                        "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    }
-                ]
-            }
+        postmark_payload = {
+            "From": os.getenv("POSTMARK_FROM_EMAIL"),
+            "To": recipient,
+            "Subject": "Your AI Response",
+            "TextBody": "Please find your AI-generated response attached.",
+            "Attachments": [
+                {
+                    "Name": os.path.basename(docx_path),
+                    "Content": docx_encoded,
+                    "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                }
+            ]
+        }
 
-            r = requests.post(
-                "https://api.postmarkapp.com/email",
-                headers={
-                    "X-Postmark-Server-Token": os.getenv("POSTMARK_API_KEY"),
-                    "Content-Type": "application/json"
-                },
-                json=postmark_payload
-            )
+        r = requests.post(
+            "https://api.postmarkapp.com/email",
+            headers={
+                "X-Postmark-Server-Token": os.getenv("POSTMARK_API_KEY"),
+                "Content-Type": "application/json"
+            },
+            json=postmark_payload
+        )
+        if r.status_code != 200:
+            raise Exception(f"Postmark error: {r.status_code} - {r.text}")
 
-            if r.status_code != 200:
-                raise Exception(f"Postmark error: {r.status_code} - {r.text}")
+except Exception as e:
+    print("❌ Postmark Error:", str(e))
+    return jsonify({"status": "error", "message": f"Postmark error: {str(e)}"}), 500
 
-    except Exception as e:
-        print("❌ Postmark Error:", str(e))
-        return jsonify({"status": "error", "message": f"Postmark error: {str(e)}"}), 500
+print("✅ All responses sent")
+return jsonify({"status": "success", "message": "Response emailed to all recipients successfully."})
 
-    print("✅ All responses sent")
-    return jsonify({"status": "success", "message": "Response emailed to all recipients successfully."})
 
 @app.route("/ping")
 def ping():
