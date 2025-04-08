@@ -68,7 +68,7 @@ def handle_query():
         with open(f"indexes/{discipline}_docs.pkl", "rb") as f:
             docs = pickle.load(f)
     except Exception as e:
-        print("\u274c FAISS load error:", str(e))
+        print("❌ FAISS load error:", str(e))
         return jsonify({"status": "error", "message": f"FAISS load error: {str(e)}"}), 500
 
     # Encode query and perform semantic search
@@ -86,7 +86,7 @@ def handle_query():
 
     # Build prompt for OpenAI GPT
     prompt = f"""
-\ud83d\udcda Context from strategic materials:
+    📚 Context from strategic materials:
 {context_text}
 
 You are an expert advisor responding to an executive-level strategic management query.
@@ -109,7 +109,7 @@ Please return your answer in this exact JSON format:
 }}
 """
 
-    print("\ud83d\udce4 Prompt being sent to GPT:\n", prompt)
+    print("Prompt being sent to GPT:\n", prompt)
 
     # Call OpenAI and parse response
     try:
@@ -124,7 +124,7 @@ Please return your answer in this exact JSON format:
             parsed["action_sheet"] = list(parsed["action_sheet"].values())
 
     except Exception as e:
-        print("\u274c GPT Error:", str(e))
+        print("❌ GPT Error:", str(e))
         return jsonify({"status": "error", "message": f"OpenAI error: {str(e)}"}), 500
 
     # Extract response fields
@@ -209,10 +209,11 @@ Please return your answer in this exact JSON format:
                 raise Exception(f"Postmark error: {r.status_code} - {r.text}")
 
     except Exception as e:
-        print("\u274c Postmark Error:", str(e))
+        print("❌ Postmark Error:", str(e))
         return jsonify({"status": "error", "message": f"Postmark error: {str(e)}"}), 500
 
-    print("\u2705 All responses sent")
+    print("✅ All responses sent")
+    
     return jsonify({"status": "success", "message": "Response emailed to all recipients successfully."})
 
 # Basic health check endpoint
