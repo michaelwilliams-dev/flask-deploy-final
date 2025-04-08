@@ -15,29 +15,24 @@ from sentence_transformers import SentenceTransformer
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Allow cross-origin requests for front-end integration
+CORS(app)
 
 # Initialize OpenAI client with API key from environment variable
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Health check route
+@app.route("/query", methods=["POST"])
 def handle_query():
-    data = request.get_json()  # Parse incoming JSON data
+    data = request.get_json()
 
-
-
-    # Extract fields from request
     name = data.get("full_name")
     email = data.get("email")
     query = data.get("query")
 
-    # Safely parse job code
     try:
         job_code = int(data.get("job_code", 9999))
     except (ValueError, TypeError):
         job_code = 9999
 
-    # Other optional metadata
     discipline = data.get("discipline", "").lower().replace(" ", "_")
     search_type = data.get("search_type", "")
     timeline = data.get("timeline", "") or "Not specified"
@@ -46,11 +41,9 @@ def handle_query():
     supervisor_name = data.get("supervisor_name")
     hr_email = data.get("hr_email")
 
-    # Basic input validation
     if not all([name, email, query]):
         return jsonify({"status": "error", "message": "Missing required fields"}), 400
 
-    # Determine role type based on job code
     if 1000 <= job_code < 2000:
         role_type = "executive"
     elif 2000 <= job_code < 3000:
@@ -62,7 +55,6 @@ def handle_query():
     else:
         role_type = "general"
 
-    # Load FAISS index and corresponding documents
     try:
         index = faiss.read_index(f"indexes/{discipline}_index.faiss")
         with open(f"indexes/{discipline}_docs.pkl", "rb") as f:
@@ -71,12 +63,10 @@ def handle_query():
         print("❌ FAISS load error:", str(e))
         return jsonify({"status": "error", "message": f"FAISS load error: {str(e)}"}), 500
 
-    # Encode query and perform semantic search
     embed_model = SentenceTransformer("all-MiniLM-L6-v2")
     query_vector = embed_model.encode([query])
     D, I = index.search(query_vector, k=10)
 
-    # Select top-matching context chunks
     context_chunks = [
         docs[i]['text'] for i in I[0]
         if i < len(docs) and len(docs[i]['text'].strip()) > 100
@@ -84,8 +74,7 @@ def handle_query():
 
     context_text = "\n\n".join(context_chunks)
 
-    # Build prompt for OpenAI GPT
-prompt = f"""
+    prompt = f"""
 📚 Strategic Context:
 {context_text}
 
@@ -106,9 +95,9 @@ Please return your answer in this exact JSON format:
 }}
 """
 
-    print("Prompt being sent to GPT:\n", prompt)
+    print("Prompt being sent to GPT:
+", prompt)
 
-    # Call OpenAI and parse response
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -124,13 +113,13 @@ Please return your answer in this exact JSON format:
         print("❌ GPT Error:", str(e))
         return jsonify({"status": "error", "message": f"OpenAI error: {str(e)}"}), 500
 
-    # Extract response fields
     enquirer_text = parsed.get("enquirer_reply", "No enquirer reply provided.")
     action_text = parsed.get("action_sheet", [])
     action_text_formatted = "\n".join(f"{i+1}. {item}" for i, item in enumerate(action_text))
 
-    # Function to write and return path to DOCX
     def write_outputs(recipient_label, include_action, timestamp):
+        print(f"📅 DEBUG: Timeline = '{timeline}'")
+
         full_text = f"""AIVS REPORT – {recipient_label.upper()} – {timestamp}
 
 ==================================================
@@ -139,7 +128,7 @@ Please return your answer in this exact JSON format:
 {query}
 
 📘 Discipline: {discipline.title()}
-📅 Timeline: {timeline}
+📅 TIMELINE – Action Needed By: {timeline or 'Not specified'}
 🧭 Search Type: {search_type}
 
 ==================================================
@@ -158,22 +147,18 @@ Please return your answer in this exact JSON format:
 
         return docx_file
 
-    # Generate timestamp once per request
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 
-    # Generate user DOCX
     files_to_send = {
         email: write_outputs("user", include_action=False, timestamp=timestamp)
     }
 
-    # Optionally generate supervisor and HR DOCX
     if supervisor_email:
         files_to_send[supervisor_email] = write_outputs("supervisor", include_action=True, timestamp=timestamp)
 
     if hr_email:
         files_to_send[hr_email] = write_outputs("hr", include_action=True, timestamp=timestamp)
 
-    # Send all generated DOCX files via Postmark
     try:
         for recipient, docx_path in files_to_send.items():
             with open(docx_path, "rb") as f:
@@ -210,16 +195,8 @@ Please return your answer in this exact JSON format:
         return jsonify({"status": "error", "message": f"Postmark error: {str(e)}"}), 500
 
     print("✅ All responses sent")
-    
     return jsonify({"status": "success", "message": "Response emailed to all recipients successfully."})
 
-# Basic health check endpoint
 @app.route("/ping")
 def ping():
     return jsonify({"status": "ok", "message": "API is live and reachable."})
-
-# Main route
-@app.route("/query", methods=["POST"])
-def query():
-    return handle_query()
-
