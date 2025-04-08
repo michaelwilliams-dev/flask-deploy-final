@@ -24,7 +24,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 def handle_query():
     data = request.get_json()  # Parse incoming JSON data
 
-    print("\ud83d\ude80 AIVS BUILD: 2024-04-07 19:00 - full rebuild")
+
 
     # Extract fields from request
     name = data.get("full_name")
