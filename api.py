@@ -174,7 +174,7 @@ Query:
     try:
         for recipient, zip_path in files_to_send.items():
             with open(zip_path, "rb") as f:
-                zip_encoded = base64.b64encode(f.read()).decode()
+                docx_encoded = base64.b64encode(f.read()).decode(
 
             postmark_payload = {
                 "From": os.getenv("POSTMARK_FROM_EMAIL"),
@@ -183,9 +183,9 @@ Query:
                 "TextBody": "Please find your AI-generated response attached.",
                 "Attachments": [
                     {
-                        "Name": os.path.basename(zip_path),
-                        "Content": zip_encoded,
-                        "ContentType": "application/zip"
+                        "Name": os.path.basename(docx_path),
+                        "Content": docx_encoded,
+                        "ContentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     }
                 ]
             }
