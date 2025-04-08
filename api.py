@@ -19,6 +19,7 @@ app = Flask(__name__)
 CORS(app)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+embed_model = SentenceTransformer("all-MiniLM-L12-v2")
 
 @app.route("/query", methods=["POST"])
 def handle_query():
