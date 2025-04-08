@@ -38,7 +38,7 @@ def handle_query():
 
     discipline = data.get("discipline", "").lower().replace(" ", "_")
     search_type = data.get("search_type", "")
-    timeline = data.get("timeline", "") or "Not specified"
+    timeline = data.get("dropdownTimeline", "") or "Not specified"
     source_context = str(data.get("source_context", ""))
     supervisor_email = data.get("supervisor_email")
     supervisor_name = data.get("supervisor_name")
