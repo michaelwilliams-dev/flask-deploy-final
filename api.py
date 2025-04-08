@@ -66,7 +66,7 @@ def handle_query():
         return jsonify({"status": "error", "message": f"FAISS load error: {str(e)}"}), 500
 
     # Embed the query and search
-    embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+    embed_model = SentenceTransformer("paraphrase-albert-small-v2")
     query_vector = embed_model.encode([query])
     D, I = index.search(query_vector, k=10)
 
